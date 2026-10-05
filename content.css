@@ -1,0 +1,85 @@
+.hy-link-pocket-target {
+  position: relative !important;
+}
+
+.hy-link-pocket-save {
+  position: absolute !important;
+  z-index: 2147483646 !important;
+  top: 10px !important;
+  right: 10px !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 2px solid #2f2938 !important;
+  border-radius: 12px 9px 13px 9px !important;
+  background: #ff9fba !important;
+  color: #fff9ef !important;
+  box-shadow: 2px 2px 0 #2f2938 !important;
+  font: 800 20px/1 Inter, -apple-system, BlinkMacSystemFont, sans-serif !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  transition: opacity .15s ease, transform .15s ease !important;
+}
+
+.hy-link-pocket-save::after {
+  content: "✦" !important;
+  position: absolute !important;
+  top: -8px !important;
+  right: -6px !important;
+  color: #7964d5 !important;
+  font: 900 13px/1 Inter, -apple-system, BlinkMacSystemFont, sans-serif !important;
+  text-shadow: 1px 1px 0 #2f2938 !important;
+}
+
+.hy-link-pocket-target.hy-platform-x > .hy-link-pocket-save,
+.hy-link-pocket-target.hy-platform-instagram > .hy-link-pocket-save {
+  top: 50px !important;
+  right: 10px !important;
+}
+
+.hy-link-pocket-target.hy-platform-youtube > .hy-link-pocket-save {
+  top: 48px !important;
+  right: 12px !important;
+}
+
+.hy-link-pocket-target:hover > .hy-link-pocket-save,
+.hy-link-pocket-save:focus {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+
+.hy-link-pocket-save:hover {
+  background: #ffb5ca !important;
+}
+
+.hy-link-pocket-save.hy-saving {
+  opacity: 1 !important;
+  pointer-events: none !important;
+}
+
+.hy-link-pocket-toast {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  left: 50% !important;
+  bottom: 28px !important;
+  transform: translate(-50%, 16px) !important;
+  max-width: min(440px, calc(100vw - 32px)) !important;
+  padding: 12px 18px !important;
+  border-radius: 999px !important;
+  background: #2f2938 !important;
+  color: white !important;
+  box-shadow: 0 12px 36px rgba(20, 15, 28, .25) !important;
+  font: 600 13px/1.4 Inter, -apple-system, BlinkMacSystemFont, sans-serif !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity .18s ease, transform .18s ease !important;
+}
+
+.hy-link-pocket-toast.hy-show {
+  opacity: 1 !important;
+  transform: translate(-50%, 0) !important;
+}

@@ -1,0 +1,29 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #2b2634;
+  background: #fbf9f4;
+}
+* { box-sizing: border-box; }
+body { margin: 0; width: 380px; min-height: 440px; background: radial-gradient(circle at 90% 0, #eee9ff 0, transparent 33%), #fbf9f4; }
+main { padding: 22px; }
+header { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; }
+.brand-mark { width: 42px; height: 42px; display: grid; place-items: center; border: 2px solid #2b2634; border-radius: 14px 11px 15px 10px; background: #b8a7ff; box-shadow: 3px 3px 0 #2b2634; font-size: 20px; transform: rotate(-2deg); }
+h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
+header p { margin: 3px 0 0; color: #817a8d; font-size: 12px; }
+.tip { margin: 2px 0 13px; padding: 11px 12px; border: 1px solid #d9cef7; border-radius: 12px 9px 13px 10px; background: #f1edff; color: #5f4e9f; font-size: 11px; line-height: 1.55; }
+.label-note { color: #8a8192; font-weight: 400; }
+label { display: block; font-size: 12px; font-weight: 700; margin: 13px 0 7px; }
+.category-row { display: grid; grid-template-columns: 1fr 42px; gap: 8px; }
+select, textarea, input { width: 100%; border: 1.5px solid #d7d1dc; background: rgba(255,255,255,.9); border-radius: 12px; color: #2b2634; outline: none; font: inherit; }
+select { height: 42px; padding: 0 12px; }
+input { height: 42px; padding: 0 12px; }
+textarea { resize: vertical; padding: 11px 12px; line-height: 1.4; }
+select:focus, textarea:focus, input:focus { border-color: #8c73f4; box-shadow: 0 0 0 3px rgba(140,115,244,.13); }
+button { width: 100%; border: 0; font: inherit; font-weight: 700; cursor: pointer; }
+#quick-category { border: 1.5px dashed #a99fc0; border-radius: 12px; background: #f3efff; color: #6f58ca; font-size: 18px; }
+.primary { margin-top: 16px; height: 46px; color: white; border-radius: 14px 11px 15px 12px; background: #2f2938; box-shadow: 3px 3px 0 #b8a7ff; }
+.primary:disabled { opacity: .45; cursor: wait; }
+.primary:not(:disabled):active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #b8a7ff; }
+.secondary { margin-top: 8px; height: 34px; background: transparent; color: #6e6578; font-size: 12px; }
+#status { min-height: 18px; text-align: center; padding-top: 9px; font-size: 12px; color: #4f8e78; }

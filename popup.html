@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>花野链接夹</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand-mark">✦</div>
+      <div><h1>花野链接夹</h1><p>看到喜欢的，放进自己的目录</p></div>
+    </header>
+
+    <div id="tip" class="tip" hidden></div>
+
+    <label for="title">链接名称</label>
+    <input id="title" maxlength="120" placeholder="给它一个以后看得懂的名字">
+
+    <label for="url">页面链接</label>
+    <input id="url" type="url" placeholder="https://…">
+
+    <label for="category">自动分类到 <span class="label-note">可手动调整</span></label>
+    <div class="category-row">
+      <select id="category"></select>
+      <button id="quick-category" type="button" title="新建分类">＋</button>
+    </div>
+
+    <label for="note">顺手记一句</label>
+    <textarea id="note" rows="3" placeholder="为什么想保存？准备怎么用？"></textarea>
+
+    <button id="save" class="primary" disabled>保存这个链接</button>
+    <div id="status" role="status"></div>
+    <button id="dashboard" class="secondary">打开全部链接 →</button>
+  </main>
+  <script src="core.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

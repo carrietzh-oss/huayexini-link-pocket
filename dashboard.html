@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>花野链接夹</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside>
+      <div class="logo"><span>✦</span><div><h1>花野链接夹</h1><p>以后还想回来看，就放这里</p></div></div>
+      <nav id="categories"></nav>
+      <button id="add-category" class="dashed">＋ 新建分类</button>
+      <button id="manage-categories" class="plain">管理分类</button>
+      <div class="aside-footer"><p>链接只保存在你的浏览器里</p></div>
+    </aside>
+
+    <main>
+      <header class="toolbar">
+        <div><p class="eyebrow">LINK POCKET</p><h2 id="view-title">全部链接</h2></div>
+        <div class="toolbar-actions">
+          <input id="search" type="search" placeholder="搜索标题、笔记或来源…">
+          <button id="add-link" class="dark">＋ 添加链接</button>
+        </div>
+      </header>
+
+      <section class="stats" id="stats"></section>
+      <section id="empty" class="empty" hidden><div>✦</div><h3>这里还是空的</h3><p>打开一个网页，点击浏览器工具栏里的“花野链接夹”开始收藏。</p></section>
+      <section id="cards" class="cards"></section>
+    </main>
+  </div>
+
+  <dialog id="category-dialog">
+    <form method="dialog" id="category-form">
+      <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
+      <p class="eyebrow">NEW CATEGORY</p><h3>新建一个分类</h3>
+      <label>分类名称<input id="category-name" required maxlength="30" placeholder="例如：值得研究的开源项目"></label>
+      <button class="dark" value="default">创建分类</button>
+    </form>
+  </dialog>
+
+  <dialog id="manage-dialog">
+    <form method="dialog">
+      <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
+      <p class="eyebrow">ORGANIZE</p><h3>管理分类</h3>
+      <div id="category-manager" class="category-manager"></div>
+      <button class="dark" value="default">完成</button>
+    </form>
+  </dialog>
+
+  <dialog id="link-dialog">
+    <form method="dialog" id="link-form">
+      <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
+      <p class="eyebrow">NEW LINK</p><h3>手动添加一个链接</h3>
+      <label>链接名称<input id="link-title" maxlength="120" placeholder="例如：很喜欢的混合媒介剪辑"></label>
+      <label>页面链接<input id="link-url" type="url" required placeholder="https://…"></label>
+      <label>自动分类到（可以手动调整）<select id="link-category"></select></label>
+      <label>备注（选填）<input id="link-note" maxlength="200" placeholder="以后回来时提醒自己为什么保存"></label>
+      <button class="dark" value="default">保存链接</button>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status"></div>
+  <script src="core.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>
