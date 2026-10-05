@@ -154,6 +154,25 @@ function isSafeWebUrl(url = "") {
   }
 }
 
+function isSafeImageUrl(url = "") {
+  if (/^data:image\/(?:png|jpe?g|webp);base64,/i.test(url)) return true;
+  return isSafeWebUrl(url);
+}
+
+async function stabilizeCover(raw = {}) {
+  if (raw.platform !== "Instagram" || !isSafeWebUrl(raw.cover)) return raw;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "HY_CACHE_INSTAGRAM_COVER",
+      url: raw.cover
+    });
+    if (response?.ok && response.dataUrl) {
+      return { ...raw, cover: response.dataUrl };
+    }
+  } catch {}
+  return raw;
+}
+
 function createCategory(name, categories) {
   const base = String(name).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-").replace(/^-|-$/g, "") || "category";
   let id = base;
@@ -167,6 +186,7 @@ function createCategory(name, categories) {
 }
 
 async function saveLink(raw) {
+  raw = await stabilizeCover(raw);
   const { categories, items } = await ensureState();
   if (!isSafeWebUrl(raw.url)) throw new Error("请输入以 http:// 或 https:// 开头的网页链接");
   const classification = classifyLink(raw);
@@ -212,6 +232,8 @@ globalThis.HYCore = {
   storageSet,
   normalizeUrl,
   isSafeWebUrl,
+  isSafeImageUrl,
+  stabilizeCover,
   classifyLink,
   createCategory,
   saveLink
