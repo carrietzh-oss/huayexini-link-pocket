@@ -29,7 +29,30 @@ function fillSelect(select, selectedId = "inbox") {
 
 async function load() {
   state = await HYCore.ensureState();
+  await repairInstagramCovers();
   render();
+}
+
+async function repairInstagramCovers() {
+  const candidates = state.items
+    .filter(item => item.platform === "Instagram" && HYCore.isSafeWebUrl(item.cover))
+    .slice(0, 20);
+  if (!candidates.length) return;
+
+  const repaired = await Promise.all(candidates.map(item => HYCore.stabilizeCover(item)));
+  let changed = false;
+  const byId = new Map(repaired.map(item => [item.id, item]));
+
+  state.items = state.items.map(item => {
+    const next = byId.get(item.id);
+    if (next && next.cover !== item.cover) {
+      changed = true;
+      return next;
+    }
+    return item;
+  });
+
+  if (changed) await HYCore.storageSet({ items: state.items });
 }
 
 function render() {
@@ -84,7 +107,7 @@ function renderCards() {
     const category = state.categories.find(entry => entry.id === item.categoryId) || state.categories[0];
     let source = "网页";
     try { source = new URL(item.url).hostname.replace(/^www\./, ""); } catch {}
-    const hasCover = item.cover && HYCore.isSafeWebUrl(item.cover);
+    const hasCover = item.cover && HYCore.isSafeImageUrl(item.cover);
     const platform = item.platform || source;
     const description = item.description || item.note || "没有提取到正文，点击可返回原页面查看。";
     const cover = hasCover
