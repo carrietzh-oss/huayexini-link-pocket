@@ -31,7 +31,7 @@ function setCaptured(data, { showClassification = true } = {}) {
   captured = { ...captured, ...data };
   document.querySelector("#title").value = captured.title || "";
   document.querySelector("#url").value = captured.url || "";
-  const classification = HYCore.classifyLink(captured);
+  const classification = HYCore.classifyLink(captured, state.categories);
   if (!categoryChanged) fillCategorySelect(classification.categoryId);
   if (showClassification) {
     const name = state.categories.find(category => category.id === classification.categoryId)?.name || "待整理";
@@ -90,13 +90,13 @@ document.querySelector("#quick-category").addEventListener("click", async () => 
 
 document.querySelector("#title").addEventListener("input", event => {
   captured.title = event.target.value;
-  if (!categoryChanged) fillCategorySelect(HYCore.classifyLink(captured).categoryId);
+  if (!categoryChanged) fillCategorySelect(HYCore.classifyLink(captured, state.categories).categoryId);
 });
 
 document.querySelector("#url").addEventListener("input", event => {
   captured.url = event.target.value.trim();
   document.querySelector("#save").disabled = !captured.url;
-  if (!categoryChanged) fillCategorySelect(HYCore.classifyLink(captured).categoryId);
+  if (!categoryChanged) fillCategorySelect(HYCore.classifyLink(captured, state.categories).categoryId);
 });
 
 document.querySelector("#save").addEventListener("click", async () => {
