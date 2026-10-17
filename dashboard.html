@@ -35,7 +35,9 @@
     <form method="dialog" id="category-form">
       <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
       <p class="eyebrow">NEW CATEGORY</p><h3>新建一个分类</h3>
-      <label>分类名称<input id="category-name" required maxlength="30" placeholder="例如：值得研究的开源项目"></label>
+      <label>分类名称<input id="category-name" required maxlength="30" placeholder="例如：剪辑"></label>
+      <label>自动匹配词（选填，用逗号分隔）<input id="category-keywords" maxlength="300" placeholder="例如：转场、剪映、Premiere"></label>
+      <p>名称也参与自动匹配；词越具体，分类越准确。</p>
       <button class="dark" value="default">创建分类</button>
     </form>
   </dialog>
