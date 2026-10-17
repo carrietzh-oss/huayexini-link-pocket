@@ -21,7 +21,7 @@ function storageSet(value) {
 async function ensureState() {
   const state = await storageGet(["categories", "items"]);
   const categories = Array.isArray(state.categories) && state.categories.length
-    ? state.categories.map(({ id, name, color }) => ({ id, name, color }))
+    ? state.categories.map(({ id, name, color, keywords }) => ({ id, name, color, keywords: Array.isArray(keywords) ? keywords : [] }))
     : DEFAULT_CATEGORIES;
   const items = Array.isArray(state.items) ? state.items.map(item => ({
     author: "",
@@ -110,9 +110,24 @@ const CLASSIFICATION_RULES = [
   }
 ];
 
-function classifyLink(raw = {}) {
+function categoryKeywords(value = "") {
+  return [...new Set(String(value).split(/[,，、;；\n]+/).map(word => word.trim()).filter(Boolean))].slice(0, 20);
+}
+
+function customCategoryScore(text, category) {
+  const terms = [category.name, ...(category.keywords || [])]
+    .map(word => String(word).trim().toLowerCase())
+    .filter(word => word.length >= 2);
+  return terms.reduce((score, term) => score + (text.includes(term) ? 12 : 0), 0);
+}
+
+function classifyLink(raw = {}, categories = DEFAULT_CATEGORIES) {
   const text = [raw.title, raw.description, raw.note, raw.url, raw.author].filter(Boolean).join(" ");
   const scores = Object.fromEntries(CLASSIFICATION_RULES.map(rule => [rule.id, 0]));
+  const available = new Set(categories.map(category => category.id));
+  const customCategories = categories.filter(category => category.id !== "inbox" &&
+    !DEFAULT_CATEGORIES.some(defaultCategory => defaultCategory.id === category.id));
+  const lowerText = text.toLowerCase();
   const reasons = {};
 
   for (const rule of CLASSIFICATION_RULES) {
@@ -135,7 +150,16 @@ function classifyLink(raw = {}) {
     reasons.reading ||= "正文较长，更适合稍后阅读";
   }
 
-  const winner = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+  for (const category of customCategories) {
+    const score = customCategoryScore(lowerText, category);
+    if (score) {
+      scores[category.id] = score;
+      reasons[category.id] = "命中你为新分类设置的名称或匹配词";
+    }
+  }
+
+  const winner = Object.entries(scores).filter(([id]) => available.has(id))
+    .sort((a, b) => b[1] - a[1])[0];
   if (!winner || winner[1] === 0) {
     return {
       categoryId: raw.mediaType ? "visual-reference" : "reading",
@@ -173,7 +197,7 @@ async function stabilizeCover(raw = {}) {
   return raw;
 }
 
-function createCategory(name, categories) {
+function createCategory(name, categories, keywords = "") {
   const base = String(name).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-").replace(/^-|-$/g, "") || "category";
   let id = base;
   let index = 2;
@@ -181,6 +205,7 @@ function createCategory(name, categories) {
   return {
     id,
     name: String(name).trim(),
+    keywords: categoryKeywords(keywords),
     color: CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length]
   };
 }
@@ -189,7 +214,7 @@ async function saveLink(raw) {
   raw = await stabilizeCover(raw);
   const { categories, items } = await ensureState();
   if (!isSafeWebUrl(raw.url)) throw new Error("请输入以 http:// 或 https:// 开头的网页链接");
-  const classification = classifyLink(raw);
+  const classification = classifyLink(raw, categories);
   const requestedCategory = raw.categoryId || classification.categoryId;
   const categoryId = categories.some(category => category.id === requestedCategory)
     ? requestedCategory
@@ -236,5 +261,6 @@ globalThis.HYCore = {
   stabilizeCover,
   classifyLink,
   createCategory,
+  categoryKeywords,
   saveLink
 };
