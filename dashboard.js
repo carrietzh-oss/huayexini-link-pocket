@@ -144,11 +144,12 @@ function renderCategoryManager() {
   $("#category-manager").innerHTML = state.categories.map((category, index) => `
     <div class="manager-row" data-manager-id="${escapeHtml(category.id)}">
       <span class="nav-dot" style="background:${category.color}"></span>
-      <span>${escapeHtml(category.name)}</span>
+      <span>${escapeHtml(category.name)}${category.keywords?.length ? " · " + escapeHtml(category.keywords.join("、")) : ""}</span>
       <span class="manager-actions">
         <button type="button" data-move="up" ${index === 0 ? "disabled" : ""} title="上移">↑</button>
         <button type="button" data-move="down" ${index === state.categories.length - 1 ? "disabled" : ""} title="下移">↓</button>
         <button type="button" data-rename title="改名">✎</button>
+        <button type="button" data-keywords title="编辑自动匹配词">词</button>
         <button type="button" data-remove ${category.id === "inbox" ? "disabled" : ""} title="删除">×</button>
       </span>
     </div>`).join("");
@@ -163,6 +164,15 @@ function renderCategoryManager() {
       await HYCore.storageSet({ categories: state.categories });
       renderCategoryManager();
       render();
+    });
+    row.querySelector("[data-keywords]").addEventListener("click", async () => {
+      const category = state.categories.find(entry => entry.id === id);
+      const value = window.prompt("自动匹配词，用逗号分隔；留空可清除", (category.keywords || []).join("、"));
+      if (value === null) return;
+      category.keywords = HYCore.categoryKeywords(value);
+      await HYCore.storageSet({ categories: state.categories });
+      renderCategoryManager();
+      showToast("自动匹配词已更新");
     });
     row.querySelector("[data-remove]").addEventListener("click", async () => {
       const category = state.categories.find(entry => entry.id === id);
@@ -199,7 +209,7 @@ $("#link-category").addEventListener("change", () => { linkCategoryChanged = tru
     title: $("#link-title").value,
     url: $("#link-url").value,
     note: $("#link-note").value
-  }).categoryId;
+  }, state.categories).categoryId;
   fillSelect($("#link-category"), categoryId);
 }));
 $("#add-category").addEventListener("click", () => $("#category-dialog").showModal());
@@ -212,7 +222,7 @@ $("#category-form").addEventListener("submit", async event => {
   const name = $("#category-name").value.trim();
   if (!name) return;
   if (state.categories.some(category => category.name === name)) return showToast("已经有同名分类了");
-  state.categories.push(HYCore.createCategory(name, state.categories));
+  state.categories.push(HYCore.createCategory(name, state.categories, $("#category-keywords").value));
   await HYCore.storageSet({ categories: state.categories });
   event.target.reset();
   $("#category-dialog").close();
