@@ -19,8 +19,15 @@
   }
 
   function imageUrl(image) {
-    return [image?.currentSrc, image?.src, image?.getAttribute?.("src")]
+    return [image?.currentSrc, image?.src, image?.getAttribute?.("src"),
+      image?.getAttribute?.("srcset")?.split(",")?.[0]?.trim()?.split(/\s+/)?.[0]]
       .find(url => /^https:\/\//i.test(url || "")) || "";
+  }
+
+  function backgroundCover(container, pattern) {
+    const element = [...container.querySelectorAll('[style*="background-image"]')]
+      .find(node => pattern.test(node.style.backgroundImage));
+    return element?.style.backgroundImage.match(/url\(["']?(https:\/\/[^"')]+)/i)?.[1] || "";
   }
 
   function pageCover(permalink) {
@@ -39,7 +46,11 @@
   function findInstagramPermalink(container) {
     const ownLink = container.matches?.('a[href^="/p/"],a[href^="/reel/"],a[href^="/tv/"]') ? container : null;
     const link = ownLink || container.querySelector('a[href^="/p/"],a[href^="/reel/"],a[href^="/tv/"]');
-    return absoluteUrl(link?.getAttribute("href") || "");
+    if (link) return absoluteUrl(link.getAttribute("href"));
+    if (container.matches?.("article") && container === document.querySelector("article") && /^\/(p|reel|tv)\/[^/]+/.test(location.pathname)) {
+      return location.href;
+    }
+    return "";
   }
 
   function findYouTubePermalink(container) {
@@ -56,7 +67,8 @@
     const video = container.querySelector("video");
     const image = container.querySelector('[data-testid="tweetPhoto"] img, img[src*="pbs.twimg.com/media"], [data-testid="videoPlayer"] img');
     const url = findXPermalink(container);
-    const cover = imageUrl(image) || (/^https:\/\//i.test(video?.poster || "") ? video.poster : "") || pageCover(url);
+    const cover = imageUrl(image) || (/^https:\/\//i.test(video?.poster || "") ? video.poster : "") ||
+      backgroundCover(container, /twimg\.com/) || pageCover(url);
     const mediaType = video ? "video" : image ? "image" : "";
     return {
       url,
@@ -72,7 +84,8 @@
   function extractInstagram(container) {
     const video = container.querySelector("video");
     const images = [...container.querySelectorAll("img")]
-      .filter(image => imageUrl(image) && !/profile|avatar/i.test(image.alt || ""));
+      .filter(image => imageUrl(image) && !/profile|avatar/i.test(image.alt || "") &&
+        Math.max(image.naturalWidth || 0, image.width || 0, image.getBoundingClientRect().width) >= 120);
     const image = images.sort((a, b) => (b.naturalWidth || b.width) - (a.naturalWidth || a.width))[0];
     const rawText = cleanText(container.querySelector("h1")?.innerText || container.innerText || image?.alt || "");
     const description = rawText.slice(0, 900);
@@ -82,7 +95,8 @@
     });
     const author = cleanText(profileLink?.innerText || "").split(" ")[0];
     const url = findInstagramPermalink(container);
-    const cover = imageUrl(image) || (/^https:\/\//i.test(video?.poster || "") ? video.poster : "") || pageCover(url);
+    const cover = imageUrl(image) || (/^https:\/\//i.test(video?.poster || "") ? video.poster : "") ||
+      backgroundCover(container, /cdninstagram\.com|fbcdn\.net|fbsbx\.com/) || pageCover(url);
     const mediaType = video ? "video" : image ? "image" : "";
     return {
       url,
@@ -145,7 +159,7 @@
     toast.textContent = message;
     toast.classList.add("hy-show");
     clearTimeout(showToast.timer);
-    showToast.timer = setTimeout(() => toast.classList.remove("hy-show"), 2400);
+    showToast.timer = setTimeout(() => toast.classList.remove("hy-show"), message.includes("封面") ? 6000 : 2400);
   }
 
   function categoryName(categories, id) {
@@ -249,7 +263,7 @@
         const result = await HYCore.requestSaveLink(post);
         const { categories } = await HYCore.ensureState();
         button.textContent = "✓";
-        const coverHint = result.link.cover?.startsWith("data:image/") ? "" : "（封面未存到本地，可进入详情页重试）";
+        const coverHint = result.link.cover?.startsWith("data:image/") ? "" : `（封面未存本地：${result.coverError || "请打开详情页重试"}）`;
         showToast(`${result.duplicate ? "已更新" : "已保存"}到：${categoryName(categories, result.link.categoryId)}${coverHint}`);
       } catch (error) {
         button.textContent = "!";
