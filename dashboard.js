@@ -61,8 +61,9 @@ function renderCategories() {
       event.preventDefault();
       button.classList.remove("drag-over");
       if (!draggedItemId || button.dataset.category === "all") return;
-      state.items = state.items.map(item => item.id === draggedItemId ? { ...item, categoryId: button.dataset.category, updatedAt: new Date().toISOString() } : item);
-      await HYCore.storageSet({ items: state.items });
+      const response = await chrome.runtime.sendMessage({ type: "HY_MOVE_LINK", id: draggedItemId, categoryId: button.dataset.category });
+      if (!response?.ok) return showToast(response?.error || "移动失败");
+      state = await HYCore.ensureState();
       showToast("已经移到新分类");
       render();
     });
@@ -97,7 +98,7 @@ function renderCards() {
       <p class="card-copy">${escapeHtml(description)}</p>
       ${item.note && item.description ? `<p class="card-note">我的备注：${escapeHtml(item.note)}</p>` : ""}
       <div class="source">${escapeHtml(item.author ? `${item.author} · ${platform}` : platform)} · ${escapeHtml(source)}</div>
-      <div class="card-actions"><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">打开原页面 ↗</a>${hasCover && !item.cover.startsWith("data:") ? `<button data-refresh-cover="${item.id}">重试封面</button>` : ""}<button data-delete="${item.id}">删除</button></div>
+      <div class="card-actions"><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">打开原页面 ↗</a>${(hasCover && !item.cover.startsWith("data:")) || (item.platform === "YouTube" && !hasCover) ? `<button data-refresh-cover="${item.id}">重试封面</button>` : ""}<button data-delete="${item.id}">删除</button></div>
     </article>`;
   }).join("");
 
@@ -123,8 +124,9 @@ function renderCards() {
     }
   }));
   document.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", async () => {
-    state.items = state.items.filter(item => item.id !== button.dataset.delete);
-    await HYCore.storageSet({ items: state.items });
+    const response = await chrome.runtime.sendMessage({ type: "HY_DELETE_LINK", id: button.dataset.delete });
+    if (!response?.ok) return showToast(response?.error || "删除失败");
+    state = await HYCore.ensureState();
     render();
     showToast("已删除");
   }));
@@ -167,10 +169,10 @@ function renderCategoryManager() {
     row.querySelector("[data-remove]").addEventListener("click", async () => {
       const category = state.categories.find(entry => entry.id === id);
       if (!window.confirm(`删除“${category.name}”？其中的链接会移到“待整理”。`)) return;
-      state.categories = state.categories.filter(entry => entry.id !== id);
-      state.items = state.items.map(item => item.categoryId === id ? { ...item, categoryId: "inbox" } : item);
+      const response = await chrome.runtime.sendMessage({ type: "HY_REMOVE_CATEGORY", id });
+      if (!response?.ok) return showToast(response?.error || "删除分类失败");
       if (currentCategory === id) currentCategory = "all";
-      await HYCore.storageSet({ categories: state.categories, items: state.items });
+      state = await HYCore.ensureState();
       renderCategoryManager();
       render();
     });
