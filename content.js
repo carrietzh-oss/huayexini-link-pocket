@@ -9,6 +9,7 @@
   }
 
   function absoluteUrl(href = "") {
+    if (!href.trim()) return "";
     try { return new URL(href, location.origin).href; } catch { return ""; }
   }
 
@@ -76,7 +77,7 @@
   function findYouTubePermalink(container) {
     if (container.id === "above-the-fold" && /\/(watch|shorts)/.test(location.pathname)) return location.href;
     const ownLink = container.matches?.('a[href^="/watch"],a[href^="/shorts/"]') ? container : null;
-    const link = ownLink || container.querySelector('a#thumbnail[href^="/watch"],a[href^="/shorts/"],a#video-title[href^="/watch"]');
+    const link = ownLink || container.querySelector('a#thumbnail[href^="/watch"],a[href^="/shorts/"],a#video-title[href^="/watch"],a[href^="/watch?"]');
     return absoluteUrl(link?.getAttribute("href") || "");
   }
 
@@ -140,6 +141,7 @@
     const url = findYouTubePermalink(container);
     const title = cleanText(
       container.querySelector("#video-title")?.textContent ||
+      container.querySelector("h3 a, .yt-lockup-metadata-view-model__title")?.textContent ||
       container.querySelector("h1 yt-formatted-string, h1")?.textContent ||
       ""
     );
@@ -156,7 +158,7 @@
         videoId = parsed.searchParams.get("v") || parsed.pathname.match(/^\/shorts\/([^/]+)/)?.[1] || "";
       } catch {}
     }
-    const thumbnail = container.querySelector("a#thumbnail img, #thumbnail img, yt-image img");
+    const thumbnail = container.querySelector("a#thumbnail img, #thumbnail img, yt-image img, yt-thumbnail-view-model img");
     const pageImages = imageUrls(thumbnail).filter(candidate =>
       videoId && candidate.includes(`/${videoId}/`) && /\.ytimg\.com\//i.test(candidate));
     const coverCandidates = [...new Set([
@@ -296,10 +298,11 @@
       button.textContent = "…";
       try {
         const post = extractPost(container);
+        if (!post.url) throw new Error("没有识别到这条内容的链接，请打开详情页重试");
         const result = await HYCore.requestSaveLink(post);
         const { categories } = await HYCore.ensureState();
         button.textContent = "✓";
-        const coverHint = result.link.cover?.startsWith("data:image/") ? "" : `（封面未存本地：${result.coverError || "请打开详情页重试"}）`;
+        const coverHint = result.link.cover?.startsWith("data:image/") ? "" : `（封面未存本地：${result.coverError || "后台未返回失败原因，请重新加载扩展并刷新页面"}）`;
         showToast(`${result.duplicate ? "已更新" : "已保存"}到：${categoryName(categories, result.link.categoryId)}${coverHint}`);
       } catch (error) {
         button.textContent = "!";
@@ -329,11 +332,12 @@
         "ytd-grid-video-renderer",
         "ytd-compact-video-renderer",
         "ytd-reel-item-renderer",
+        "yt-lockup-view-model",
         "ytm-shorts-lockup-view-model",
         "#above-the-fold"
       ].join(",");
       return [...new Set([...document.querySelectorAll(selectors)])]
-        .filter(container => findYouTubePermalink(container));
+        .filter(container => findYouTubePermalink(container) && !container.parentElement?.closest(selectors));
     }
     const articles = [...document.querySelectorAll("article")].filter(article => findInstagramPermalink(article));
     const links = [...document.querySelectorAll('a[href^="/p/"],a[href^="/reel/"],a[href^="/tv/"]')]
