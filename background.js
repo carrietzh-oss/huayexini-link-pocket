@@ -27,7 +27,7 @@ async function toCompactImageDataUrl(url) {
   let response;
   for (const credentials of ["include", "omit"]) {
     try {
-      response = await fetch(url, { credentials, cache: "no-store", signal: AbortSignal.timeout(12000) });
+      response = await fetch(url, { credentials, cache: "no-store", signal: AbortSignal.timeout(6000) });
       if (response.ok) break;
     } catch (error) {
       if (credentials === "omit") throw new Error(error.name === "TimeoutError" ? "图片下载超时" : "图片服务器拒绝扩展下载");
@@ -58,9 +58,60 @@ async function toCompactImageDataUrl(url) {
   return `data:${blob.type || "image/webp"};base64,${bytesToBase64(bytes)}`;
 }
 
+function coverCandidates(raw) {
+  const urls = [raw.cover, ...(Array.isArray(raw.coverCandidates) ? raw.coverCandidates : [])];
+  if (raw.platform === "YouTube") {
+    try {
+      const parsed = new URL(raw.url);
+      if (/(^|\.)youtube\.com$/.test(parsed.hostname)) {
+        const id = parsed.searchParams.get("v") || parsed.pathname.match(/^\/shorts\/([^/]+)/)?.[1];
+        if (/^[A-Za-z0-9_-]{11}$/.test(id || "")) {
+          urls.push(`https://i.ytimg.com/vi_webp/${id}/hqdefault.webp`,
+            `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+            `https://i.ytimg.com/vi/${id}/mqdefault.jpg`);
+        }
+      }
+    } catch {}
+  }
+  return [...new Set(urls.filter(url => typeof url === "string" && imageHost(url)))].slice(0, 6);
+}
+
+async function cacheFirstCover(raw) {
+  let lastError;
+  for (const url of coverCandidates(raw)) {
+    try { return await toCompactImageDataUrl(url); }
+    catch (error) { lastError = error; }
+  }
+  throw lastError || new Error("页面中没有提取到这条内容的封面");
+}
+
 let saveQueue = Promise.resolve();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (["HY_MOVE_LINK", "HY_DELETE_LINK", "HY_REMOVE_CATEGORY"].includes(message?.type)) {
+    const next = saveQueue.then(async () => {
+      const { categories, items } = await HYCore.ensureState();
+      if (message.type === "HY_MOVE_LINK") {
+        if (!categories.some(category => category.id === message.categoryId)) throw new Error("分类不存在");
+        const item = items.find(entry => entry.id === message.id);
+        if (!item) throw new Error("链接不存在");
+        item.categoryId = message.categoryId;
+        item.updatedAt = new Date().toISOString();
+        await HYCore.storageSet({ items });
+      } else if (message.type === "HY_DELETE_LINK") {
+        await HYCore.storageSet({ items: items.filter(item => item.id !== message.id) });
+      } else {
+        if (message.id === "inbox" || !categories.some(category => category.id === message.id)) throw new Error("分类不存在");
+        await HYCore.storageSet({ categories: categories.filter(category => category.id !== message.id),
+          items: items.map(item => item.categoryId === message.id ? { ...item, categoryId: "inbox" } : item) });
+      }
+      return true;
+    });
+    saveQueue = next.catch(() => {});
+    next.then(result => sendResponse({ ok: true, result }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message?.type === "HY_IMPORT_BACKUP") {
     const next = saveQueue.then(async () => {
       const merged = HYCore.mergeBackup(await HYCore.ensureState(), message.backup);
@@ -76,8 +127,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const next = saveQueue.then(async () => {
       const { items } = await HYCore.ensureState();
       const item = items.find(entry => entry.id === message.id);
-      if (!item || !imageHost(item.cover)) throw new Error("没有可重试的封面地址，请打开原内容重新保存");
-      const cover = await toCompactImageDataUrl(item.cover);
+      if (!item || !coverCandidates(item).length) throw new Error("没有可重试的封面地址，请打开原内容重新保存");
+      const cover = await cacheFirstCover(item);
       item.cover = cover;
       await HYCore.storageSet({ items });
       return item;
@@ -91,8 +142,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const next = saveQueue.then(async () => {
       let raw = message.raw;
       let coverError = "";
-      if (raw.cover && !raw.cover.startsWith("data:image/")) {
-        try { raw = { ...raw, cover: await toCompactImageDataUrl(raw.cover) }; }
+      if (!raw.cover?.startsWith("data:image/") && coverCandidates(raw).length) {
+        try { raw = { ...raw, cover: await cacheFirstCover(raw) }; }
         catch (error) { coverError = error.message; }
       } else if (!raw.cover && ["Instagram", "X", "YouTube"].includes(raw.platform)) {
         coverError = "页面中没有提取到这条内容的封面";
