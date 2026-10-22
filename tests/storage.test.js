@@ -168,3 +168,98 @@ test("moving and removing categories cannot overwrite a simultaneous save", asyn
   assert.equal(app.data.items.length, 2);
   assert.equal(app.data.items.find(item => item.id === saved.result.link.id).categoryId, "reading");
 });
+
+test("large thumbnails remain sharp and tiny YouTube placeholders are skipped", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  let dimensions;
+  let quality;
+  app.context.fetch = async url => ({ ok: true,
+    blob: async () => new Blob([url], { type: "image/jpeg" }) });
+  app.context.createImageBitmap = async blob => ({
+    width: (await blob.text()).includes("maxresdefault") ? 120 : 1280,
+    height: 720, close() {}
+  });
+  app.context.OffscreenCanvas = class {
+    constructor(width, height) { dimensions = [width, height]; }
+    getContext() { return { drawImage() {} }; }
+    async convertToBlob(options) { quality = options.quality; return new Blob(["sharp"], { type: "image/webp" }); }
+  };
+  const result = await app.send({ type: "HY_SAVE_LINK", raw: {
+    url: "https://www.youtube.com/watch?v=AbCdEf123_0", platform: "YouTube", cover: ""
+  } });
+  assert.match(result.result.link.cover, /^data:image\/webp;base64,/);
+  assert.deepEqual(dimensions, [960, 540]);
+  assert.equal(quality, 0.86);
+});
+
+function extractFromContent(hostname, container, name) {
+  const source = fs.readFileSync("content.js", "utf8")
+    .replace("  function extractPost(container) {", "  globalThis.__extract = { extractX, extractInstagram, extractYouTube };\n  function extractPost(container) {")
+    .replace("  scan();\n  new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });", "");
+  const context = vm.createContext({ URL, location: { hostname, origin: `https://${hostname}`, href: `https://${hostname}/`, pathname: "/" },
+    HYCore: { normalizeUrl: value => value }, document: { querySelector: () => null, addEventListener() {} },
+    window: { addEventListener() {} }, chrome: { runtime: { onMessage: { addListener() {} } } } });
+  vm.runInContext(source, context);
+  return context.__extract[name](container);
+}
+
+test("Instagram chooses the first carousel image, not a larger inner page", () => {
+  const image = (url, width) => ({ currentSrc: url, naturalWidth: width, width,
+    getAttribute: () => "", getBoundingClientRect: () => ({ width }), closest: () => null });
+  const first = image("https://scontent.cdninstagram.com/cover.jpg", 320);
+  const later = image("https://scontent.cdninstagram.com/inside.jpg", 1080);
+  const container = { innerText: "photo", querySelector: selector => selector.startsWith("a[href^")
+    ? { getAttribute: () => "/p/abc/" } : null,
+  querySelectorAll: selector => selector === "img" ? [first, later] : [] };
+  const result = extractFromContent("instagram.com", container, "extractInstagram");
+  assert.equal(result.cover, first.currentSrc);
+  assert.ok(!result.coverCandidates.includes(later.currentSrc));
+});
+
+test("X video poster beats an unrelated photo and image URLs request original size", () => {
+  const photo = { currentSrc: "https://pbs.twimg.com/media/AbCd.jpg?name=small", getAttribute: () => "" };
+  const container = { querySelector: selector => selector === "video" ? { poster: "https://pbs.twimg.com/media/Video.jpg" }
+    : selector.startsWith("[data-testid=\"tweetPhoto\"]") ? photo
+      : selector.startsWith("time") ? { closest: () => ({ getAttribute: () => "/a/status/123" }) } : null,
+  querySelectorAll: () => [] };
+  const result = extractFromContent("x.com", container, "extractX");
+  assert.equal(result.cover, "https://pbs.twimg.com/media/Video.jpg");
+  assert.ok(result.coverCandidates.some(url => url.includes("name=orig")));
+});
+
+test("YouTube uses the video's own high resolution thumbnail ahead of the loaded preview", () => {
+  const thumbnail = { currentSrc: "https://i.ytimg.com/vi/AbCdEf123_0/mqdefault.jpg",
+    getAttribute: () => "" };
+  const anchor = { getAttribute: () => "/watch?v=AbCdEf123_0" };
+  const container = { id: "", querySelector: selector => selector.startsWith("a#thumbnail[href^") ? anchor
+    : selector.startsWith("a#thumbnail img") ? thumbnail : null };
+  const result = extractFromContent("www.youtube.com", container, "extractYouTube");
+  assert.equal(result.url, "https://www.youtube.com/watch?v=AbCdEf123_0");
+  assert.match(result.cover, /\/AbCdEf123_0\/maxresdefault\.jpg$/);
+  assert.ok(result.coverCandidates.includes(thumbnail.currentSrc));
+});
+
+test("a small social preview is skipped and the selected original can be refreshed", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  const seen = [];
+  app.context.fetch = async url => ({ ok: true, blob: async () => new Blob([url], { type: "image/jpeg" }) });
+  app.context.createImageBitmap = async blob => {
+    const url = await blob.text();
+    seen.push(url);
+    return { width: url.includes("small") ? 240 : 1200, height: 800, close() {} };
+  };
+  app.context.OffscreenCanvas = class {
+    getContext() { return { drawImage() {} }; }
+    async convertToBlob() { return new Blob(["cached"], { type: "image/webp" }); }
+  };
+  const saved = await app.send({ type: "HY_SAVE_LINK", raw: {
+    url: "https://x.com/a/status/123", platform: "X",
+    cover: "https://pbs.twimg.com/media/small.jpg",
+    coverCandidates: ["https://pbs.twimg.com/media/original.jpg"]
+  } });
+  assert.equal(saved.result.link.coverSource, "https://pbs.twimg.com/media/original.jpg");
+  assert.equal(seen.length, 2);
+  const refreshed = await app.send({ type: "HY_REFRESH_COVER", id: saved.result.link.id });
+  assert.equal(refreshed.ok, true);
+  assert.equal(seen.at(-1), "https://pbs.twimg.com/media/original.jpg");
+});
