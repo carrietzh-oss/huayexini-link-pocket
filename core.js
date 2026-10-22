@@ -178,7 +178,7 @@ function isSafeWebUrl(url = "") {
 }
 
 function isSafeImageUrl(url = "") {
-  if (/^data:image\/(?:png|jpe?g|webp);base64,/i.test(url)) return true;
+  if (/^data:image\/(?:png|jpe?g|webp|avif|gif);base64,/i.test(url)) return true;
   return isSafeWebUrl(url);
 }
 
