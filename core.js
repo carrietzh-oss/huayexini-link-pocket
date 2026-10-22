@@ -32,7 +32,6 @@ async function ensureState() {
     classificationReason: "",
     ...item
   })) : [];
-  await storageSet({ categories, items });
   return { categories, items };
 }
 
@@ -184,10 +183,10 @@ function isSafeImageUrl(url = "") {
 }
 
 async function stabilizeCover(raw = {}) {
-  if (raw.platform !== "Instagram" || !isSafeWebUrl(raw.cover)) return raw;
+  if (!isSafeWebUrl(raw.cover)) return raw;
   try {
     const response = await chrome.runtime.sendMessage({
-      type: "HY_CACHE_INSTAGRAM_COVER",
+      type: "HY_CACHE_COVER",
       url: raw.cover
     });
     if (response?.ok && response.dataUrl) {
@@ -195,6 +194,12 @@ async function stabilizeCover(raw = {}) {
     }
   } catch {}
   return raw;
+}
+
+async function requestSaveLink(raw) {
+  const response = await chrome.runtime.sendMessage({ type: "HY_SAVE_LINK", raw });
+  if (!response?.ok) throw new Error(response?.error || "保存失败");
+  return response.result;
 }
 
 function createCategory(name, categories, keywords = "") {
@@ -210,8 +215,47 @@ function createCategory(name, categories, keywords = "") {
   };
 }
 
+function mergeBackup(current, backup) {
+  if (!backup || backup.format !== "huayexini-link-pocket" || !Array.isArray(backup.categories) || !Array.isArray(backup.items)) {
+    throw new Error("这不是花野链接夹的备份文件");
+  }
+  const categories = [...current.categories];
+  const categoryIds = new Map();
+  for (const entry of backup.categories) {
+    if (typeof entry?.id !== "string" || typeof entry?.name !== "string" || !entry.name.trim()) continue;
+    let category = categories.find(item => item.name === entry.name.trim());
+    if (!category) {
+      category = createCategory(entry.name.slice(0, 30), categories, (entry.keywords || []).join?.("、") || "");
+      categories.push(category);
+    }
+    categoryIds.set(entry.id, category.id);
+  }
+  const items = [...current.items];
+  let imported = 0;
+  for (const entry of backup.items) {
+    if (!entry || !isSafeWebUrl(entry.url)) continue;
+    const categoryId = categoryIds.get(entry.categoryId) || "inbox";
+    const existing = items.find(item => normalizeUrl(item.url) === normalizeUrl(entry.url));
+    if (existing) {
+      if (!existing.cover && isSafeImageUrl(entry.cover)) existing.cover = entry.cover;
+      continue;
+    }
+    items.push({
+      id: crypto.randomUUID(), url: entry.url, title: String(entry.title || entry.url).slice(0, 300),
+      note: String(entry.note || "").slice(0, 2000), author: String(entry.author || "").slice(0, 300),
+      description: String(entry.description || "").slice(0, 3000),
+      cover: isSafeImageUrl(entry.cover) ? entry.cover : "",
+      platform: String(entry.platform || "").slice(0, 100), mediaType: String(entry.mediaType || "").slice(0, 30),
+      categoryId, classificationReason: String(entry.classificationReason || "").slice(0, 300),
+      createdAt: entry.createdAt || new Date().toISOString(), updatedAt: entry.updatedAt || new Date().toISOString()
+    });
+    imported++;
+  }
+  return { categories, items, imported };
+}
+
 async function saveLink(raw) {
-  raw = await stabilizeCover(raw);
+  if (!raw.skipCoverCache) raw = await stabilizeCover(raw);
   const { categories, items } = await ensureState();
   if (!isSafeWebUrl(raw.url)) throw new Error("请输入以 http:// 或 https:// 开头的网页链接");
   const classification = classifyLink(raw, categories);
@@ -231,7 +275,8 @@ async function saveLink(raw) {
     note: raw.note?.trim() || existing?.note || "",
     author: raw.author?.trim() || existing?.author || "",
     description: raw.description?.trim() || existing?.description || "",
-    cover: raw.cover?.trim() || existing?.cover || "",
+    cover: raw.cover?.startsWith("data:image/") ? raw.cover :
+      (existing?.cover?.startsWith("data:image/") ? existing.cover : raw.cover?.trim() || existing?.cover || ""),
     platform: raw.platform?.trim() || existing?.platform || "",
     mediaType: raw.mediaType?.trim() || existing?.mediaType || "",
     categoryId,
@@ -259,8 +304,10 @@ globalThis.HYCore = {
   isSafeWebUrl,
   isSafeImageUrl,
   stabilizeCover,
+  requestSaveLink,
   classifyLink,
   createCategory,
   categoryKeywords,
+  mergeBackup,
   saveLink
 };
