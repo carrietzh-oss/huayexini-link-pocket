@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "花野链接夹",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "在 X、Instagram 和 YouTube 一键保存单条内容，自动分类并保留封面与内容说明。",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "unlimitedStorage"
   ],
   "action": {
     "default_title": "保存到花野链接夹",
@@ -45,6 +46,10 @@
   },
   "host_permissions": [
     "https://*.cdninstagram.com/*",
-    "https://*.fbcdn.net/*"
+    "https://*.fbcdn.net/*",
+    "https://pbs.twimg.com/*",
+    "https://video.twimg.com/*",
+    "https://i.ytimg.com/*",
+    "https://img.youtube.com/*"
   ]
 }
