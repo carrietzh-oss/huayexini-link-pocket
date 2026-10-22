@@ -167,7 +167,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } else if (!raw.cover?.startsWith("data:image/") && ["Instagram", "X", "YouTube"].includes(raw.platform)) {
         let host = "";
         try { host = new URL(raw.cover).hostname; } catch {}
-        coverError = raw.cover ? `图片域名不受支持${host ? `：${host}` : ""}` : "页面中没有提取到这条内容的封面";
+        coverError = raw.cover ? `图片域名不受支持${host ? `：${host}` : ""}` : raw.coverExtractionError || "页面中没有提取到这条内容的封面";
       }
       const result = await HYCore.saveLink({ ...raw, skipCoverCache: true });
       return { ...result, coverError };
