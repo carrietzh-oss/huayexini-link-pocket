@@ -23,6 +23,9 @@ function bytesToBase64(bytes) {
 
 async function toCompactImageDataUrl(url) {
   if (!imageHost(url)) throw new Error("图片地址不属于已支持的平台图片域名");
+  if (chrome.permissions?.contains && !await chrome.permissions.contains({ origins: [`${new URL(url).origin}/*`] })) {
+    throw new Error(`扩展未获图片访问权限：${new URL(url).hostname}`);
+  }
 
   let response;
   for (const credentials of ["include", "omit"]) {
@@ -89,12 +92,12 @@ function coverCandidates(raw) {
 }
 
 async function cacheFirstCover(raw) {
-  let lastError;
+  const errors = new Set();
   for (const url of coverCandidates(raw)) {
     try { return { dataUrl: await toCompactImageDataUrl(url), source: url }; }
-    catch (error) { lastError = error; }
+    catch (error) { errors.add(error.message); }
   }
-  throw lastError || new Error("页面中没有提取到这条内容的封面");
+  throw new Error([...errors].slice(0, 3).join("；") || "页面中没有提取到这条内容的封面");
 }
 
 let saveQueue = Promise.resolve();
@@ -161,8 +164,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           raw = { ...raw, cover: cover.dataUrl, coverSource: cover.source };
         }
         catch (error) { coverError = error.message; }
-      } else if (!raw.cover && ["Instagram", "X", "YouTube"].includes(raw.platform)) {
-        coverError = "页面中没有提取到这条内容的封面";
+      } else if (!raw.cover?.startsWith("data:image/") && ["Instagram", "X", "YouTube"].includes(raw.platform)) {
+        let host = "";
+        try { host = new URL(raw.cover).hostname; } catch {}
+        coverError = raw.cover ? `图片域名不受支持${host ? `：${host}` : ""}` : "页面中没有提取到这条内容的封面";
       }
       const result = await HYCore.saveLink({ ...raw, skipCoverCache: true });
       return { ...result, coverError };
