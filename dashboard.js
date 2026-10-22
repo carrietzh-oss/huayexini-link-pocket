@@ -98,7 +98,7 @@ function renderCards() {
       <p class="card-copy">${escapeHtml(description)}</p>
       ${item.note && item.description ? `<p class="card-note">我的备注：${escapeHtml(item.note)}</p>` : ""}
       <div class="source">${escapeHtml(item.author ? `${item.author} · ${platform}` : platform)} · ${escapeHtml(source)}</div>
-      <div class="card-actions"><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">打开原页面 ↗</a>${(hasCover && !item.cover.startsWith("data:")) || (item.platform === "YouTube" && !hasCover) ? `<button data-refresh-cover="${item.id}">重试封面</button>` : ""}<button data-delete="${item.id}">删除</button></div>
+      <div class="card-actions"><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">打开原页面 ↗</a>${item.coverSource || (hasCover && !item.cover.startsWith("data:")) || item.platform === "YouTube" ? `<button data-refresh-cover="${item.id}">重试封面</button>` : ""}<button data-delete="${item.id}">删除</button></div>
     </article>`;
   }).join("");
 
