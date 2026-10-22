@@ -5,7 +5,7 @@ function imageHost(url = "") {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:") return "";
     const host = parsed.hostname;
-    return ["cdninstagram.com", "fbcdn.net", "fbsbx.com", "twimg.com", "ytimg.com", "ggpht.com"]
+    return host === "img.youtube.com" || ["cdninstagram.com", "fbcdn.net", "fbsbx.com", "twimg.com", "ytimg.com", "ggpht.com"]
       .some(domain => host === domain || host.endsWith(`.${domain}`)) ? host : "";
   } catch {
     return "";
@@ -40,7 +40,11 @@ async function toCompactImageDataUrl(url) {
 
   try {
     const bitmap = await createImageBitmap(blob);
-    const maxSide = 320;
+    if (Math.min(bitmap.width, bitmap.height) < 320) {
+      bitmap.close?.();
+      throw new Error("图片尺寸太小，继续尝试其他封面");
+    }
+    const maxSide = 960;
     const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
@@ -48,38 +52,46 @@ async function toCompactImageDataUrl(url) {
     const context = canvas.getContext("2d");
     context.drawImage(bitmap, 0, 0, width, height);
     bitmap.close?.();
-    blob = await canvas.convertToBlob({ type: "image/webp", quality: 0.62 });
-  } catch {
-    if (blob.size > 1000000) throw new Error("图片无法压缩且超过 1 MB");
+    blob = await canvas.convertToBlob({ type: "image/webp", quality: 0.86 });
+  } catch (error) {
+    if (error.message === "图片尺寸太小，继续尝试其他封面") throw error;
+    if (blob.size > 2500000) throw new Error("图片无法压缩且超过 2.5 MB");
   }
 
-  if (blob.size > 1000000) throw new Error("图片超过 1 MB，无法保存缩略图");
+  if (blob.size > 2500000) throw new Error("图片超过 2.5 MB，无法保存缩略图");
   const bytes = new Uint8Array(await blob.arrayBuffer());
   return `data:${blob.type || "image/webp"};base64,${bytesToBase64(bytes)}`;
 }
 
 function coverCandidates(raw) {
-  const urls = [raw.cover, ...(Array.isArray(raw.coverCandidates) ? raw.coverCandidates : [])];
+  const urls = [];
+  let videoId = "";
   if (raw.platform === "YouTube") {
     try {
       const parsed = new URL(raw.url);
       if (/(^|\.)youtube\.com$/.test(parsed.hostname)) {
         const id = parsed.searchParams.get("v") || parsed.pathname.match(/^\/shorts\/([^/]+)/)?.[1];
         if (/^[A-Za-z0-9_-]{11}$/.test(id || "")) {
-          urls.push(`https://i.ytimg.com/vi_webp/${id}/hqdefault.webp`,
-            `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-            `https://i.ytimg.com/vi/${id}/mqdefault.jpg`);
+          videoId = id;
+          urls.push(`https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+            `https://i.ytimg.com/vi/${id}/sddefault.jpg`);
         }
       }
     } catch {}
   }
-  return [...new Set(urls.filter(url => typeof url === "string" && imageHost(url)))].slice(0, 6);
+  urls.push(raw.coverSource, raw.cover, ...(Array.isArray(raw.coverCandidates) ? raw.coverCandidates : []));
+  if (videoId) {
+    urls.push(`https://i.ytimg.com/vi_webp/${videoId}/hqdefault.webp`,
+      `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`);
+  }
+  return [...new Set(urls.filter(url => typeof url === "string" && imageHost(url)))].slice(0, 8);
 }
 
 async function cacheFirstCover(raw) {
   let lastError;
   for (const url of coverCandidates(raw)) {
-    try { return await toCompactImageDataUrl(url); }
+    try { return { dataUrl: await toCompactImageDataUrl(url), source: url }; }
     catch (error) { lastError = error; }
   }
   throw lastError || new Error("页面中没有提取到这条内容的封面");
@@ -129,7 +141,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const item = items.find(entry => entry.id === message.id);
       if (!item || !coverCandidates(item).length) throw new Error("没有可重试的封面地址，请打开原内容重新保存");
       const cover = await cacheFirstCover(item);
-      item.cover = cover;
+      item.cover = cover.dataUrl;
+      item.coverSource = cover.source;
       await HYCore.storageSet({ items });
       return item;
     });
@@ -143,7 +156,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       let raw = message.raw;
       let coverError = "";
       if (!raw.cover?.startsWith("data:image/") && coverCandidates(raw).length) {
-        try { raw = { ...raw, cover: await cacheFirstCover(raw) }; }
+        try {
+          const cover = await cacheFirstCover(raw);
+          raw = { ...raw, cover: cover.dataUrl, coverSource: cover.source };
+        }
         catch (error) { coverError = error.message; }
       } else if (!raw.cover && ["Instagram", "X", "YouTube"].includes(raw.platform)) {
         coverError = "页面中没有提取到这条内容的封面";
