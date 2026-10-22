@@ -29,30 +29,7 @@ function fillSelect(select, selectedId = "inbox") {
 
 async function load() {
   state = await HYCore.ensureState();
-  await repairInstagramCovers();
   render();
-}
-
-async function repairInstagramCovers() {
-  const candidates = state.items
-    .filter(item => item.platform === "Instagram" && HYCore.isSafeWebUrl(item.cover))
-    .slice(0, 20);
-  if (!candidates.length) return;
-
-  const repaired = await Promise.all(candidates.map(item => HYCore.stabilizeCover(item)));
-  let changed = false;
-  const byId = new Map(repaired.map(item => [item.id, item]));
-
-  state.items = state.items.map(item => {
-    const next = byId.get(item.id);
-    if (next && next.cover !== item.cover) {
-      changed = true;
-      return next;
-    }
-    return item;
-  });
-
-  if (changed) await HYCore.storageSet({ items: state.items });
 }
 
 function render() {
@@ -120,7 +97,7 @@ function renderCards() {
       <p class="card-copy">${escapeHtml(description)}</p>
       ${item.note && item.description ? `<p class="card-note">我的备注：${escapeHtml(item.note)}</p>` : ""}
       <div class="source">${escapeHtml(item.author ? `${item.author} · ${platform}` : platform)} · ${escapeHtml(source)}</div>
-      <div class="card-actions"><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">打开原页面 ↗</a><button data-delete="${item.id}">删除</button></div>
+      <div class="card-actions"><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">打开原页面 ↗</a>${hasCover && !item.cover.startsWith("data:") ? `<button data-refresh-cover="${item.id}">重试封面</button>` : ""}<button data-delete="${item.id}">删除</button></div>
     </article>`;
   }).join("");
 
@@ -131,6 +108,19 @@ function renderCards() {
   document.querySelectorAll(".card-cover img").forEach(image => image.addEventListener("error", () => {
     image.closest(".card-cover")?.classList.add("no-image");
     image.remove();
+  }));
+  document.querySelectorAll("[data-refresh-cover]").forEach(button => button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "HY_REFRESH_COVER", id: button.dataset.refreshCover });
+      if (!response?.ok) throw new Error(response?.error || "封面获取失败");
+      state.items = state.items.map(item => item.id === response.result.id ? response.result : item);
+      render();
+      showToast("封面已保存到本地");
+    } catch (error) {
+      showToast(error.message);
+      button.disabled = false;
+    }
   }));
   document.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", async () => {
     state.items = state.items.filter(item => item.id !== button.dataset.delete);
@@ -197,6 +187,36 @@ function renderCategoryManager() {
 }
 
 $("#search").addEventListener("input", renderCards);
+$("#export-backup").addEventListener("click", async () => {
+  const snapshot = await HYCore.ensureState();
+  const backup = { format: "huayexini-link-pocket", version: 1, exportedAt: new Date().toISOString(), ...snapshot };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `花野链接夹-备份-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  showToast(`已导出 ${snapshot.items.length} 条链接`);
+});
+$("#import-backup").addEventListener("click", () => $("#backup-file").click());
+$("#backup-file").addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 100 * 1024 * 1024) throw new Error("备份文件超过 100 MB");
+    const backup = JSON.parse(await file.text());
+    const response = await chrome.runtime.sendMessage({ type: "HY_IMPORT_BACKUP", backup });
+    if (!response?.ok) throw new Error(response?.error || "导入失败");
+    state = await HYCore.ensureState();
+    render();
+    showToast(`导入 ${response.result.imported} 条，现有 ${response.result.total} 条`);
+  } catch (error) {
+    showToast(error.message || "备份文件无法读取");
+  }
+  event.target.value = "";
+});
 $("#add-link").addEventListener("click", () => {
   linkCategoryChanged = currentCategory !== "all";
   fillSelect($("#link-category"), currentCategory === "all" ? "reading" : currentCategory);
@@ -232,13 +252,13 @@ $("#category-form").addEventListener("submit", async event => {
 $("#link-form").addEventListener("submit", async event => {
   event.preventDefault();
   try {
-    const result = await HYCore.saveLink({
+    const result = await HYCore.requestSaveLink({
       title: $("#link-title").value,
       url: $("#link-url").value,
       note: $("#link-note").value,
       categoryId: $("#link-category").value
     });
-    state.items = result.items;
+    state = await HYCore.ensureState();
     event.target.reset();
     $("#link-dialog").close();
     render();
