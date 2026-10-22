@@ -15,7 +15,7 @@ function setup(initial = {}) {
     } },
     runtime: { onMessage: { addListener: callback => { listener = callback; } } }
   };
-  const context = vm.createContext({ chrome, URL, crypto: webcrypto, Date, Blob, Uint8Array, btoa, setTimeout });
+  const context = vm.createContext({ chrome, URL, crypto: webcrypto, Date, Blob, Uint8Array, btoa, AbortSignal, setTimeout });
   context.importScripts = name => vm.runInContext(fs.readFileSync(name, "utf8"), context);
   context.fetch = async () => { throw new Error("Image unavailable"); };
   vm.runInContext(fs.readFileSync("background.js", "utf8"), context);
@@ -73,7 +73,9 @@ test("YouTube, Instagram and X thumbnails are stored as local image data", async
   for (const [url, cover] of [
     ["https://youtube.com/watch?v=123", "https://i.ytimg.com/vi/123/hqdefault.jpg"],
     ["https://instagram.com/p/test/", "https://scontent.cdninstagram.com/a.jpg"],
-    ["https://x.com/a/status/123", "https://pbs.twimg.com/media/a.jpg"]
+    ["https://x.com/a/status/123", "https://pbs.twimg.com/media/a.jpg"],
+    ["https://instagram.com/p/other/", "https://lookaside.fbsbx.com/image.jpg"],
+    ["https://youtube.com/watch?v=456", "https://i2.ytimg.com/vi/456/hqdefault.jpg"]
   ]) {
     const result = await app.send({ type: "HY_SAVE_LINK", raw: { url, cover } });
     assert.ok(result.ok);
@@ -88,4 +90,23 @@ test("a failed later cover fetch does not replace an existing local thumbnail", 
   assert.ok(original.ok);
   const repeat = await app.send({ type: "HY_SAVE_LINK", raw: { url, cover: "https://pbs.twimg.com/media/expired.jpg" } });
   assert.equal(repeat.result.link.cover, "data:image/webp;base64,dGVzdA==");
+});
+
+test("Instagram image failures report a reason while keeping the saved link", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  app.context.fetch = async () => ({ ok: false, status: 403 });
+  const result = await app.send({ type: "HY_SAVE_LINK", raw: {
+    url: "https://instagram.com/p/test/", platform: "Instagram", cover: "https://lookaside.fbsbx.com/image.jpg"
+  } });
+  assert.equal(result.ok, true);
+  assert.match(result.result.coverError, /403/);
+  assert.equal(app.data.items.length, 1);
+});
+
+test("a missing Instagram cover reports extraction failure", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  const result = await app.send({ type: "HY_SAVE_LINK", raw: {
+    url: "https://instagram.com/p/test/", platform: "Instagram", cover: ""
+  } });
+  assert.match(result.result.coverError, /没有提取到/);
 });
