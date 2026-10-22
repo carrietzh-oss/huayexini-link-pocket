@@ -263,3 +263,38 @@ test("a small social preview is skipped and the selected original can be refresh
   assert.equal(refreshed.ok, true);
   assert.equal(seen.at(-1), "https://pbs.twimg.com/media/original.jpg");
 });
+
+test("modern YouTube card anchors are recognized without the old thumbnail ID", () => {
+  const anchor = { getAttribute: () => "/watch?v=JeJhPtsbIGA" };
+  const container = { id: "", querySelector: selector => selector.includes('a[href^="/watch?"]') ? anchor : null };
+  const result = extractFromContent("www.youtube.com", container, "extractYouTube");
+  assert.equal(result.url, "https://www.youtube.com/watch?v=JeJhPtsbIGA");
+  assert.match(result.cover, /\/JeJhPtsbIGA\/maxresdefault\.jpg$/);
+});
+
+test("a card with no permalink never becomes a bookmark of the homepage", () => {
+  const result = extractFromContent("www.youtube.com", { id: "", querySelector: () => null }, "extractYouTube");
+  assert.equal(result.url, "");
+});
+
+test("unsupported cover URLs report a concrete error instead of silently skipping download", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  const result = await app.send({ type: "HY_SAVE_LINK", raw: {
+    url: "https://instagram.com/p/test/", platform: "Instagram", cover: "https://example.com/image.jpg"
+  } });
+  assert.equal(result.ok, true);
+  assert.match(result.result.coverError, /图片域名不受支持/);
+});
+
+test("withheld image permissions are distinguished from network failures", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  app.context.chrome.permissions = { contains: async () => false };
+  let fetched = false;
+  app.context.fetch = async () => { fetched = true; throw new Error("Network failure"); };
+  const result = await app.send({ type: "HY_SAVE_LINK", raw: {
+    url: "https://instagram.com/p/test/", platform: "Instagram", cover: "https://scontent.cdninstagram.com/image.jpg"
+  } });
+  assert.match(result.result.coverError, /未获图片访问权限/);
+  assert.equal(fetched, false);
+  assert.equal(app.data.items.length, 1);
+});
