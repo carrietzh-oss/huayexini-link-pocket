@@ -262,7 +262,9 @@ $("#link-form").addEventListener("submit", async event => {
     event.target.reset();
     $("#link-dialog").close();
     render();
-    showToast(result.duplicate ? "这个链接已存在，已更新" : "链接已保存");
+    showToast(result.coverError && !result.link.cover?.startsWith("data:image/")
+      ? `链接已保存；封面：${result.coverError}`
+      : result.duplicate ? "这个链接已存在，已更新" : "链接已保存");
   } catch (error) {
     showToast(error.message);
   }
