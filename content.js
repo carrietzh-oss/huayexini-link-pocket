@@ -24,6 +24,12 @@
       .find(url => /^https:\/\//i.test(url || "")) || "";
   }
 
+  function imageUrls(image) {
+    return [...new Set([image?.currentSrc, image?.src, image?.getAttribute?.("src"),
+      ...(image?.getAttribute?.("srcset") || "").split(",").map(part => part.trim().split(/\s+/)[0])]
+      .filter(url => /^https:\/\//i.test(url || "")))];
+  }
+
   function backgroundCover(container, pattern) {
     const element = [...container.querySelectorAll('[style*="background-image"]')]
       .find(node => pattern.test(node.style.backgroundImage));
@@ -67,8 +73,9 @@
     const video = container.querySelector("video");
     const image = container.querySelector('[data-testid="tweetPhoto"] img, img[src*="pbs.twimg.com/media"], [data-testid="videoPlayer"] img');
     const url = findXPermalink(container);
-    const cover = imageUrl(image) || (/^https:\/\//i.test(video?.poster || "") ? video.poster : "") ||
-      backgroundCover(container, /twimg\.com/) || pageCover(url);
+    const coverCandidates = [...new Set([...imageUrls(image), video?.poster,
+      backgroundCover(container, /twimg\.com/), pageCover(url)].filter(Boolean))];
+    const cover = coverCandidates[0] || "";
     const mediaType = video ? "video" : image ? "image" : "";
     return {
       url,
@@ -76,6 +83,7 @@
       description,
       author,
       cover,
+      coverCandidates,
       mediaType,
       platform: "X"
     };
@@ -95,8 +103,9 @@
     });
     const author = cleanText(profileLink?.innerText || "").split(" ")[0];
     const url = findInstagramPermalink(container);
-    const cover = imageUrl(image) || (/^https:\/\//i.test(video?.poster || "") ? video.poster : "") ||
-      backgroundCover(container, /cdninstagram\.com|fbcdn\.net|fbsbx\.com/) || pageCover(url);
+    const coverCandidates = [...new Set([...imageUrls(image), video?.poster,
+      backgroundCover(container, /cdninstagram\.com|fbcdn\.net|fbsbx\.com/), pageCover(url)].filter(Boolean))];
+    const cover = coverCandidates[0] || "";
     const mediaType = video ? "video" : image ? "image" : "";
     return {
       url,
@@ -104,6 +113,7 @@
       description,
       author,
       cover,
+      coverCandidates,
       mediaType,
       platform: "Instagram"
     };
@@ -122,22 +132,28 @@
     const descriptionText = cleanText(
       container.querySelector("#description-inner, #description")?.innerText || ""
     );
-    let cover = "";
-    // The video ID is more reliable than a lazy-loaded or avatar thumbnail.
+    let videoId = "";
     if (url) {
       try {
         const parsed = new URL(url);
-        const videoId = parsed.searchParams.get("v") || parsed.pathname.match(/^\/shorts\/([^/]+)/)?.[1];
-        if (videoId) cover = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+        videoId = parsed.searchParams.get("v") || parsed.pathname.match(/^\/shorts\/([^/]+)/)?.[1] || "";
       } catch {}
     }
-    if (!cover) cover = imageUrl(container.querySelector("a#thumbnail img, yt-image img")) || pageCover(url);
+    const thumbnail = container.querySelector("a#thumbnail img, #thumbnail img, yt-image img");
+    const pageImages = imageUrls(thumbnail).filter(candidate =>
+      videoId && candidate.includes(`/${videoId}/`) && /\.ytimg\.com\//i.test(candidate));
+    const coverCandidates = [...new Set([...pageImages, pageCover(url),
+      videoId && `https://i.ytimg.com/vi_webp/${videoId}/hqdefault.webp`,
+      videoId && `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      videoId && `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`].filter(Boolean))];
+    const cover = coverCandidates[0] || "";
     return {
       url,
       title: title || makeTitle(descriptionText, author, "YouTube"),
       description: descriptionText || title,
       author,
       cover,
+      coverCandidates,
       mediaType: "video",
       platform: "YouTube"
     };
