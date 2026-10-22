@@ -1,20 +1,14 @@
 importScripts("core.js");
 
-function isAllowedImageHost(url = "") {
+function imageHost(url = "") {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== "https:") return false;
+    if (parsed.protocol !== "https:") return "";
     const host = parsed.hostname;
-    return host === "cdninstagram.com" ||
-      host.endsWith(".cdninstagram.com") ||
-      host === "fbcdn.net" ||
-      host.endsWith(".fbcdn.net") ||
-      host === "pbs.twimg.com" ||
-      host === "video.twimg.com" ||
-      host === "i.ytimg.com" ||
-      host === "img.youtube.com";
+    return ["cdninstagram.com", "fbcdn.net", "fbsbx.com", "twimg.com", "ytimg.com", "ggpht.com"]
+      .some(domain => host === domain || host.endsWith(`.${domain}`)) ? host : "";
   } catch {
-    return false;
+    return "";
   }
 }
 
@@ -28,16 +22,21 @@ function bytesToBase64(bytes) {
 }
 
 async function toCompactImageDataUrl(url) {
-  if (!isAllowedImageHost(url)) throw new Error("Unsupported image host");
+  if (!imageHost(url)) throw new Error("图片地址不属于已支持的平台图片域名");
 
-  const response = await fetch(url, {
-    credentials: "include",
-    cache: "no-store"
-  });
-  if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
+  let response;
+  for (const credentials of ["include", "omit"]) {
+    try {
+      response = await fetch(url, { credentials, cache: "no-store", signal: AbortSignal.timeout(12000) });
+      if (response.ok) break;
+    } catch (error) {
+      if (credentials === "omit") throw new Error(error.name === "TimeoutError" ? "图片下载超时" : "图片服务器拒绝扩展下载");
+    }
+  }
+  if (!response?.ok) throw new Error(`图片服务器返回 ${response?.status || "错误"}`);
 
   let blob = await response.blob();
-  if (!blob.type.startsWith("image/")) throw new Error("Not an image");
+  if (!blob.type.startsWith("image/")) throw new Error("图片地址返回了非图片内容");
 
   try {
     const bitmap = await createImageBitmap(blob);
@@ -51,10 +50,10 @@ async function toCompactImageDataUrl(url) {
     bitmap.close?.();
     blob = await canvas.convertToBlob({ type: "image/webp", quality: 0.62 });
   } catch {
-    if (blob.size > 120000) throw new Error("Image too large to cache");
+    if (blob.size > 1000000) throw new Error("图片无法压缩且超过 1 MB");
   }
 
-  if (blob.size > 120000) throw new Error("Cached image too large");
+  if (blob.size > 1000000) throw new Error("图片超过 1 MB，无法保存缩略图");
   const bytes = new Uint8Array(await blob.arrayBuffer());
   return `data:${blob.type || "image/webp"};base64,${bytesToBase64(bytes)}`;
 }
@@ -77,7 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const next = saveQueue.then(async () => {
       const { items } = await HYCore.ensureState();
       const item = items.find(entry => entry.id === message.id);
-      if (!item || !isAllowedImageHost(item.cover)) throw new Error("没有可重试的封面地址，请打开原内容重新保存");
+      if (!item || !imageHost(item.cover)) throw new Error("没有可重试的封面地址，请打开原内容重新保存");
       const cover = await toCompactImageDataUrl(item.cover);
       item.cover = cover;
       await HYCore.storageSet({ items });
@@ -91,13 +90,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "HY_SAVE_LINK") {
     const next = saveQueue.then(async () => {
       let raw = message.raw;
-      if (isAllowedImageHost(raw.cover)) {
-        try { raw = { ...raw, cover: await toCompactImageDataUrl(raw.cover) }; } catch {}
+      let coverError = "";
+      if (raw.cover && !raw.cover.startsWith("data:image/")) {
+        try { raw = { ...raw, cover: await toCompactImageDataUrl(raw.cover) }; }
+        catch (error) { coverError = error.message; }
+      } else if (!raw.cover && ["Instagram", "X", "YouTube"].includes(raw.platform)) {
+        coverError = "页面中没有提取到这条内容的封面";
       }
-      return HYCore.saveLink({ ...raw, skipCoverCache: true });
+      const result = await HYCore.saveLink({ ...raw, skipCoverCache: true });
+      return { ...result, coverError };
     });
     saveQueue = next.catch(() => {});
-    next.then(({ link, duplicate, classification }) => sendResponse({ ok: true, result: { link, duplicate, classification } }))
+    next.then(({ link, duplicate, classification, coverError }) => sendResponse({ ok: true, result: { link, duplicate, classification, coverError } }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
