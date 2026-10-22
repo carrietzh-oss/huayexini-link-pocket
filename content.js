@@ -187,6 +187,38 @@
     return extractYouTube(container);
   }
 
+  async function preparePost(container) {
+    const post = extractPost(container);
+    if (!isInstagram || !post.url || post.coverCandidates.some(url => /^https:\/\//i.test(url || ""))) return post;
+    post.cover = "";
+    post.coverCandidates = [];
+    try {
+      const permalink = new URL(post.url);
+      if (permalink.origin !== location.origin) return post;
+      const shortcode = permalink.pathname.match(/^\/(?:p|reel|tv)\/([^/]+)/)?.[1];
+      if (!shortcode) return post;
+      const response = await fetch(permalink.href, { credentials: "include", signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error(`详情页返回 ${response.status}`);
+      const finalUrl = new URL(response.url || permalink.href);
+      if (finalUrl.origin !== permalink.origin || finalUrl.pathname.match(/^\/(?:p|reel|tv)\/([^/]+)/)?.[1] !== shortcode) {
+        throw new Error("详情页跳转到了登录页或其他内容");
+      }
+      const page = new DOMParser().parseFromString(await response.text(), "text/html");
+      const canonical = page.querySelector('link[rel="canonical"]')?.href;
+      if (canonical && new URL(canonical, permalink.href).pathname.match(/^\/(?:p|reel|tv)\/([^/]+)/)?.[1] !== shortcode) {
+        throw new Error("详情页与当前内容不一致");
+      }
+      const covers = [...page.querySelectorAll('meta[property="og:image"], meta[name="twitter:image"]')]
+        .map(meta => meta.content).filter(url => /^https:\/\//i.test(url || ""));
+      if (!covers.length) throw new Error("详情页没有提供封面图片");
+      post.coverCandidates = [...new Set(covers)];
+      post.cover = post.coverCandidates[0];
+    } catch (error) {
+      post.coverExtractionError = error.name === "TimeoutError" ? "详情页封面读取超时" : error.message;
+    }
+    return post;
+  }
+
   function showToast(message) {
     let toast = document.querySelector(".hy-link-pocket-toast");
     if (!toast) {
@@ -297,7 +329,7 @@
       button.classList.add("hy-saving");
       button.textContent = "…";
       try {
-        const post = extractPost(container);
+        const post = await preparePost(container);
         if (!post.url) throw new Error("没有识别到这条内容的链接，请打开详情页重试");
         const result = await HYCore.requestSaveLink(post);
         const { categories } = await HYCore.ensureState();
@@ -359,7 +391,10 @@
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type !== "HY_GET_CURRENT_POST") return;
     const current = candidates().find(container => HYCore.normalizeUrl(extractPost(container).url) === HYCore.normalizeUrl(location.href));
-    sendResponse(current ? { ok: true, post: extractPost(current) } : { ok: false });
+    if (!current) { sendResponse({ ok: false }); return; }
+    preparePost(current).then(post => sendResponse({ ok: true, post }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
   });
 
   window.addEventListener("scroll", scheduleButtonPositionRefresh, true);
