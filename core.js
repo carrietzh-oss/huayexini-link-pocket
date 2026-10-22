@@ -245,6 +245,7 @@ function mergeBackup(current, backup) {
       note: String(entry.note || "").slice(0, 2000), author: String(entry.author || "").slice(0, 300),
       description: String(entry.description || "").slice(0, 3000),
       cover: isSafeImageUrl(entry.cover) ? entry.cover : "",
+      coverSource: isSafeWebUrl(entry.coverSource) ? entry.coverSource : "",
       platform: String(entry.platform || "").slice(0, 100), mediaType: String(entry.mediaType || "").slice(0, 30),
       categoryId, classificationReason: String(entry.classificationReason || "").slice(0, 300),
       createdAt: entry.createdAt || new Date().toISOString(), updatedAt: entry.updatedAt || new Date().toISOString()
@@ -277,6 +278,7 @@ async function saveLink(raw) {
     description: raw.description?.trim() || existing?.description || "",
     cover: raw.cover?.startsWith("data:image/") ? raw.cover :
       (existing?.cover?.startsWith("data:image/") ? existing.cover : raw.cover?.trim() || existing?.cover || ""),
+    coverSource: raw.coverSource || existing?.coverSource || "",
     platform: raw.platform?.trim() || existing?.platform || "",
     mediaType: raw.mediaType?.trim() || existing?.mediaType || "",
     categoryId,
