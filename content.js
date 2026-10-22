@@ -18,6 +18,17 @@
     return author ? `${author} 的 ${platform} 博文` : `${platform} 博文`;
   }
 
+  function imageUrl(image) {
+    return [image?.currentSrc, image?.src, image?.getAttribute?.("src")]
+      .find(url => /^https:\/\//i.test(url || "")) || "";
+  }
+
+  function pageCover(permalink) {
+    if (HYCore.normalizeUrl(permalink) !== HYCore.normalizeUrl(location.href)) return "";
+    const url = document.querySelector('meta[property="og:image"]')?.content || "";
+    return /^https:\/\//i.test(url) ? url : "";
+  }
+
   function findXPermalink(container) {
     const timeLink = container.querySelector("time")?.closest('a[href*="/status/"]');
     const link = timeLink || [...container.querySelectorAll('a[href*="/status/"]')]
@@ -43,11 +54,12 @@
     const authorBlock = cleanText(container.querySelector('[data-testid="User-Name"]')?.innerText || "");
     const author = authorBlock.split("·")[0].trim();
     const video = container.querySelector("video");
-    const image = container.querySelector('[data-testid="tweetPhoto"] img[src], img[src*="pbs.twimg.com/media"]');
-    const cover = video?.poster || image?.currentSrc || image?.src || "";
+    const image = container.querySelector('[data-testid="tweetPhoto"] img, img[src*="pbs.twimg.com/media"], [data-testid="videoPlayer"] img');
+    const url = findXPermalink(container);
+    const cover = imageUrl(image) || (/^https:\/\//i.test(video?.poster || "") ? video.poster : "") || pageCover(url);
     const mediaType = video ? "video" : image ? "image" : "";
     return {
-      url: findXPermalink(container),
+      url,
       title: makeTitle(description, author, "X"),
       description,
       author,
@@ -59,8 +71,8 @@
 
   function extractInstagram(container) {
     const video = container.querySelector("video");
-    const images = [...container.querySelectorAll("img[src]")]
-      .filter(image => !/profile|avatar/i.test(image.alt || ""));
+    const images = [...container.querySelectorAll("img")]
+      .filter(image => imageUrl(image) && !/profile|avatar/i.test(image.alt || ""));
     const image = images.sort((a, b) => (b.naturalWidth || b.width) - (a.naturalWidth || a.width))[0];
     const rawText = cleanText(container.querySelector("h1")?.innerText || container.innerText || image?.alt || "");
     const description = rawText.slice(0, 900);
@@ -69,10 +81,11 @@
       return /^\/[A-Za-z0-9._]+\/?$/.test(href) && cleanText(anchor.innerText);
     });
     const author = cleanText(profileLink?.innerText || "").split(" ")[0];
-    const cover = video?.poster || image?.currentSrc || image?.src || "";
+    const url = findInstagramPermalink(container);
+    const cover = imageUrl(image) || (/^https:\/\//i.test(video?.poster || "") ? video.poster : "") || pageCover(url);
     const mediaType = video ? "video" : image ? "image" : "";
     return {
-      url: findInstagramPermalink(container),
+      url,
       title: makeTitle(description, author, "Instagram"),
       description,
       author,
@@ -95,15 +108,16 @@
     const descriptionText = cleanText(
       container.querySelector("#description-inner, #description")?.innerText || ""
     );
-    const image = container.querySelector("a#thumbnail img, yt-image img, img");
-    let cover = image?.currentSrc || image?.src || image?.getAttribute("data-thumb") || "";
-    if (!cover) {
+    let cover = "";
+    // The video ID is more reliable than a lazy-loaded or avatar thumbnail.
+    if (url) {
       try {
         const parsed = new URL(url);
         const videoId = parsed.searchParams.get("v") || parsed.pathname.match(/^\/shorts\/([^/]+)/)?.[1];
         if (videoId) cover = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
       } catch {}
     }
+    if (!cover) cover = imageUrl(container.querySelector("a#thumbnail img, yt-image img")) || pageCover(url);
     return {
       url,
       title: title || makeTitle(descriptionText, author, "YouTube"),
@@ -232,10 +246,11 @@
       button.textContent = "…";
       try {
         const post = extractPost(container);
-        const result = await HYCore.saveLink(post);
+        const result = await HYCore.requestSaveLink(post);
         const { categories } = await HYCore.ensureState();
         button.textContent = "✓";
-        showToast(`${result.duplicate ? "已更新" : "已保存"}到：${categoryName(categories, result.link.categoryId)}`);
+        const coverHint = result.link.cover?.startsWith("data:image/") ? "" : "（封面未存到本地，可进入详情页重试）";
+        showToast(`${result.duplicate ? "已更新" : "已保存"}到：${categoryName(categories, result.link.categoryId)}${coverHint}`);
       } catch (error) {
         button.textContent = "!";
         showToast(error.message || "保存失败，请打开这条博文后再试");
