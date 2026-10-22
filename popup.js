@@ -104,7 +104,7 @@ document.querySelector("#save").addEventListener("click", async () => {
   const status = document.querySelector("#status");
   button.disabled = true;
   try {
-    const result = await HYCore.saveLink({
+    const result = await HYCore.requestSaveLink({
       ...captured,
       title: document.querySelector("#title").value,
       url: document.querySelector("#url").value,
