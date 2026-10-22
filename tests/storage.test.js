@@ -192,13 +192,13 @@ test("large thumbnails remain sharp and tiny YouTube placeholders are skipped", 
   assert.equal(quality, 0.86);
 });
 
-function extractFromContent(hostname, container, name) {
+function extractFromContent(hostname, container, name, globals = {}) {
   const source = fs.readFileSync("content.js", "utf8")
-    .replace("  function extractPost(container) {", "  globalThis.__extract = { extractX, extractInstagram, extractYouTube };\n  function extractPost(container) {")
+    .replace("  function extractPost(container) {", "  globalThis.__extract = { extractX, extractInstagram, extractYouTube, preparePost };\n  function extractPost(container) {")
     .replace("  scan();\n  new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });", "");
   const context = vm.createContext({ URL, location: { hostname, origin: `https://${hostname}`, href: `https://${hostname}/`, pathname: "/" },
     HYCore: { normalizeUrl: value => value }, document: { querySelector: () => null, addEventListener() {} },
-    window: { addEventListener() {} }, chrome: { runtime: { onMessage: { addListener() {} } } } });
+    window: { addEventListener() {} }, chrome: { runtime: { onMessage: { addListener() {} } } }, ...globals });
   vm.runInContext(source, context);
   return context.__extract[name](container);
 }
@@ -297,4 +297,42 @@ test("withheld image permissions are distinguished from network failures", async
   assert.match(result.result.coverError, /未获图片访问权限/);
   assert.equal(fetched, false);
   assert.equal(app.data.items.length, 1);
+});
+
+function instagramVideoCard() {
+  return { innerText: "video", querySelector: selector => selector === "video" ? { poster: "" }
+    : selector.startsWith('a[href^="/p/"') ? { getAttribute: () => "/reel/abc/" } : null,
+  querySelectorAll: () => [] };
+}
+
+test("Instagram videos without a poster read their own detail page cover", async () => {
+  const result = await extractFromContent("www.instagram.com", instagramVideoCard(), "preparePost", {
+    AbortSignal,
+    fetch: async url => ({ ok: true, url, text: async () => "detail page" }),
+    DOMParser: class {
+      parseFromString() { return { querySelector: () => ({ href: "https://www.instagram.com/reel/abc/" }),
+        querySelectorAll: () => [{ content: "https://scontent.cdninstagram.com/official-cover.jpg" }] }; }
+    }
+  });
+  assert.equal(result.url, "https://www.instagram.com/reel/abc/");
+  assert.equal(result.cover, "https://scontent.cdninstagram.com/official-cover.jpg");
+});
+
+test("Instagram login redirects never supply a cover for the saved post", async () => {
+  const result = await extractFromContent("www.instagram.com", instagramVideoCard(), "preparePost", {
+    AbortSignal,
+    fetch: async () => ({ ok: true, url: "https://www.instagram.com/accounts/login/" })
+  });
+  assert.equal(result.cover, "");
+  assert.match(result.coverExtractionError, /登录页/);
+});
+
+test("detail-page extraction failures reach the save response", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  const result = await app.send({ type: "HY_SAVE_LINK", raw: {
+    url: "https://www.instagram.com/reel/abc/", platform: "Instagram", cover: "",
+    coverExtractionError: "详情页没有提供封面图片"
+  } });
+  assert.equal(result.ok, true);
+  assert.equal(result.result.coverError, "详情页没有提供封面图片");
 });
