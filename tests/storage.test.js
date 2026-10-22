@@ -110,3 +110,61 @@ test("a missing Instagram cover reports extraction failure", async () => {
   } });
   assert.match(result.result.coverError, /没有提取到/);
 });
+
+test("a failed YouTube JPG falls back to the page's WebP and stays local", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  const visited = [];
+  app.context.fetch = async url => {
+    visited.push(url);
+    return url.endsWith(".webp")
+      ? { ok: true, blob: async () => new Blob(["thumbnail"], { type: "image/webp" }) }
+      : { ok: false, status: 404 };
+  };
+  const result = await app.send({ type: "HY_SAVE_LINK", raw: {
+    url: "https://www.youtube.com/watch?v=AbCdEf123_0", platform: "YouTube",
+    cover: "https://i.ytimg.com/vi/AbCdEf123_0/hqdefault.jpg",
+    coverCandidates: ["https://i.ytimg.com/vi_webp/AbCdEf123_0/hqdefault.webp"]
+  } });
+  assert.equal(result.ok, true);
+  assert.match(result.result.link.cover, /^data:image\/webp;base64,/);
+  assert.equal(result.result.coverError, "");
+  assert.ok(visited.some(url => url.endsWith(".webp")));
+});
+
+test("YouTube synthesizes fallbacks even if the page has no thumbnail", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  app.context.fetch = async url => ({ ok: url.endsWith("mqdefault.jpg"), status: 404,
+    blob: async () => new Blob(["thumbnail"], { type: "image/jpeg" }) });
+  const result = await app.send({ type: "HY_SAVE_LINK", raw: {
+    url: "https://www.youtube.com/shorts/AbCdEf123_0", platform: "YouTube", cover: ""
+  } });
+  assert.match(result.result.link.cover, /^data:image\/jpeg;base64,/);
+});
+
+test("Instagram and X try alternate media URLs when the first expires", async () => {
+  const app = setup({ categories: setup().core.DEFAULT_CATEGORIES, items: [] });
+  app.context.fetch = async url => ({ ok: url.includes("fresh"), status: 403,
+    blob: async () => new Blob(["thumbnail"], { type: "image/png" }) });
+  for (const [platform, url, host] of [
+    ["Instagram", "https://instagram.com/p/test/", "scontent.cdninstagram.com"],
+    ["X", "https://x.com/user/status/12", "pbs.twimg.com"]
+  ]) {
+    const result = await app.send({ type: "HY_SAVE_LINK", raw: { platform, url,
+      cover: `https://${host}/expired.jpg`, coverCandidates: [`https://${host}/fresh.png`] } });
+    assert.match(result.result.link.cover, /^data:image\/png;base64,/);
+  }
+});
+
+test("moving and removing categories cannot overwrite a simultaneous save", async () => {
+  const app = setup({ categories: [...setup().core.DEFAULT_CATEGORIES,
+    { id: "edit", name: "剪辑", keywords: [] }], items: [] });
+  const saved = await app.send({ type: "HY_SAVE_LINK", raw: { url: "https://x.com/a/status/1", title: "剪辑", categoryId: "edit" } });
+  const operations = await Promise.all([
+    app.send({ type: "HY_SAVE_LINK", raw: { url: "https://x.com/a/status/2", title: "新链接" } }),
+    app.send({ type: "HY_MOVE_LINK", id: saved.result.link.id, categoryId: "reading" }),
+    app.send({ type: "HY_REMOVE_CATEGORY", id: "edit" })
+  ]);
+  assert.ok(operations.every(response => response.ok));
+  assert.equal(app.data.items.length, 2);
+  assert.equal(app.data.items.find(item => item.id === saved.result.link.id).categoryId, "reading");
+});
