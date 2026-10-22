@@ -111,7 +111,9 @@ document.querySelector("#save").addEventListener("click", async () => {
       note: document.querySelector("#note").value,
       categoryId: document.querySelector("#category").value
     });
-    status.textContent = result.duplicate ? "这个链接已经存过，已更新内容" : "保存好了 ✓";
+    status.textContent = result.coverError && !result.link.cover?.startsWith("data:image/")
+      ? `链接已保存，封面未存本地：${result.coverError}`
+      : result.duplicate ? "这个链接已经存过，已更新内容" : "保存好了 ✓";
     button.textContent = result.duplicate ? "已更新" : "已保存";
     setTimeout(() => window.close(), 900);
   } catch (error) {
